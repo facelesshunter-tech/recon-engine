@@ -57,6 +57,33 @@ Status legend:
 | §23 | Cross-cutting patterns (feed-forward pipeline, noise-awareness, API-key-as-investment, cyclical recon) | `pipeline.py`, `state.py`, every module's noise-filtering caveats | ✅ (architectural, not a single file) |
 | §24 | Explicitly unclear items in the source | — | 🚫 N/A — nothing to implement, by definition |
 
+## Beyond TBHM: additional senior-recon tooling
+
+The sections above are the completeness proof against the original TBHM
+Day One source material. The tools below were added afterward, based on
+a direct "what's missing for a powerful, perfect recon setup" assessment
+against the finished tool (not traceable to a specific KB § number), and
+are wired into the same feed-forward `pipeline.py` with the same
+graceful-degradation discipline as everything above.
+
+| Addition | Module(s) | Status |
+|---|---|---|
+| assetfinder (4th passive subdomain source) | `modules/subdomain_passive.py: run_assetfinder` | ✅ |
+| GitDorker (maintained dork DB + real search execution) | `modules/github_recon.py: gitdorker_scan` | ✅ |
+| cloud_enum (active bucket/storage-account brute-force) | `modules/open_storage.py: cloud_enum_scan` | ✅ |
+| DNS intelligence / bulk resolution + wildcard filtering (dnsx) | `modules/dns_intel.py` | ✅ |
+| Internet-wide asset intelligence (Uncover, Censys, urlscan.io) | `modules/internet_intel.py` | ✅ |
+| TLS/certificate probing (tlsx) | `modules/tls_probe.py` | ✅ |
+| WAF fingerprinting (wafw00f) | `modules/waf_detect.py` | ✅ |
+| Directory/file content discovery (ffuf) | `modules/content_discovery.py` | ✅ |
+| JS-aware crawling + historical URL mining (Katana, gau) | `modules/web_crawl.py` | ✅ |
+| JS endpoint extraction, secret discovery, source-map recovery (xnLinkFinder, SecretFinder, native source-map parser) | `modules/js_analysis.py` | ✅ / ⚠️ — source-map recovery implemented natively rather than wrapping SourceMapper/ShrinkRay (see module docstring) |
+| Hidden parameter discovery (Arjun + x8, run together deliberately) | `modules/parameter_discovery.py` | ✅ |
+| API route brute-forcing (Kiterunner) | `modules/api_discovery.py` | ⚠️ — info/status parsing confirmed live; per-route hit-record field names are the best-available inference, not independently confirmed against a real positive match (see module docstring) |
+| Scoped CVE-watchlist verification (nuclei, restricted to exact watchlist CVE IDs only — never general scanning) | `modules/vuln_verify.py` | ✅ |
+| EPSS + CISA KEV live scoring enhancement | `scoring/prioritize.py: refresh_cve_intel` | ✅ |
+| Per-domain/subdomain architecture & tech-detection report (separate file from the ranked worklist) | `reporting/architecture.py` | ✅ |
+
 ## Honest summary
 
 Of the roughly 40 distinct named techniques/tools in the source material:
@@ -66,3 +93,9 @@ as non-automatable** (GUI-only business-intelligence tools, a community
 game, ToS-restricted search-engine scraping, non-technical framing
 content) rather than faked. See each module's own docstring for the
 specific reasoning behind every ⚠️ and 📄 entry above.
+
+The 15 tools/techniques in "Beyond TBHM" above add **13 fully
+implemented** and **2 partially implemented** (source-map recovery done
+natively rather than via a specific external tool pick; Kiterunner's
+hit-record schema is a documented best-effort inference, not
+independently verified live) — same honesty standard applied throughout.

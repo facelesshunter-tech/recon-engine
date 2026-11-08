@@ -15,9 +15,16 @@ matches one of these products gets a large, explicit score bump.
 
 from __future__ import annotations
 
+import logging
 import re
 
 from recon_engine.models import LiveHost
+from recon_engine.utils.http import get_json
+
+logger = logging.getLogger("recon_engine.scoring")
+
+EPSS_API = "https://api.first.org/data/v1/epss"
+CISA_KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 
 # Exact CVE timeline from the deck's "Stuff to watch for (other)" slide.
 EDGE_DEVICE_CVE_WATCHLIST: dict[str, list[str]] = {
@@ -72,6 +79,9 @@ def score_host(host: LiveHost) -> LiveHost:
         if product in tech_blob or product in title.lower():
             score += 5.0
             reasons.append(f"matches edge-device CVE watchlist product '{product}': {', '.join(cves)}")
+            bonus, intel_reasons = _cve_intel_bonus(cves)
+            score += bonus
+            reasons.extend(intel_reasons)
 
     if host.favicon_match:
         score += 2.0
@@ -85,3 +95,83 @@ def score_host(host: LiveHost) -> LiveHost:
 def rank(hosts: list[LiveHost]) -> list[LiveHost]:
     scored = [score_host(h) for h in hosts]
     return sorted(scored, key=lambda h: h.risk_score, reverse=True)
+
+
+# ---- EPSS / CISA KEV enhancement -------------------------------------
+#
+# A scoped, deliberate addition (not general vulnerability-intel tooling):
+# sharpens the existing edge-device CVE-watchlist scoring with two free,
+# no-key public data feeds, both verified directly against their real
+# APIs before being wired in here:
+#
+#   - EPSS (api.first.org): a 0-1 probability that a given CVE will be
+#     exploited in the wild in the next 30 days -- lets the scorer
+#     distinguish "technically on the watchlist" from "actively,
+#     overwhelmingly likely to be exploited" (CVE-2024-3400, for
+#     instance, scores ~0.9999 -- essentially certain).
+#   - CISA KEV (cisa.gov): the authoritative US-government list of CVEs
+#     with CONFIRMED real-world exploitation already happening. A host
+#     matching a KEV-listed CVE is not a theoretical risk.
+#
+# Neither call happens during score_host()/rank() themselves (those stay
+# fast and offline) -- call refresh_cve_intel() once per session/run to
+# populate the module-level cache, then scores automatically reflect it.
+
+_epss_cache: dict[str, float] = {}
+_kev_cache: set[str] = set()
+_intel_loaded = False
+
+
+def refresh_cve_intel(*, timeout: int = 30) -> None:
+    """Fetches current EPSS scores for the watchlist's own CVEs and the
+    full CISA KEV catalog, caching both at module level. Safe to call
+    multiple times; safe to not call at all (scoring still works with
+    plain CVE-watchlist matching if this is skipped or the network calls
+    fail -- matches every other module's graceful-degradation pattern)."""
+    global _intel_loaded
+    all_cves = sorted({cve for cves in EDGE_DEVICE_CVE_WATCHLIST.values() for cve in cves})
+
+    epss_data = get_json(EPSS_API, params={"cve": ",".join(all_cves)}, timeout=timeout)
+    if epss_data:
+        for entry in epss_data.get("data", []):
+            cve = entry.get("cve")
+            try:
+                score = float(entry.get("epss", 0))
+            except (TypeError, ValueError):
+                continue
+            if cve:
+                _epss_cache[cve] = score
+    else:
+        logger.warning("EPSS fetch failed -- scoring will proceed without EPSS enhancement")
+
+    kev_data = get_json(CISA_KEV_URL, timeout=timeout)
+    if kev_data:
+        for vuln in kev_data.get("vulnerabilities", []):
+            cve_id = vuln.get("cveID")
+            if cve_id:
+                _kev_cache.add(cve_id)
+    else:
+        logger.warning("CISA KEV fetch failed -- scoring will proceed without KEV enhancement")
+
+    _intel_loaded = True
+
+
+def _cve_intel_bonus(cves: list[str]) -> tuple[float, list[str]]:
+    """For every edge-device-watchlist match, returns extra score and
+    specific reasons per CVE that EPSS/KEV data makes look more urgent,
+    on top of the flat +5.0 the product match itself already earns.
+    Returns (0.0, []) if refresh_cve_intel() was never called -- plain
+    CVE-watchlist matching still works without this enhancement."""
+    if not _intel_loaded:
+        return 0.0, []
+    bonus = 0.0
+    reasons: list[str] = []
+    for cve in cves:
+        if cve in _kev_cache:
+            bonus += 3.0
+            reasons.append(f"{cve} is on CISA's Known Exploited Vulnerabilities list -- confirmed real-world exploitation")
+        epss = _epss_cache.get(cve)
+        if epss is not None and epss >= 0.5:
+            bonus += 2.0
+            reasons.append(f"{cve} has an EPSS exploitation-probability score of {epss:.2f} (>=0.5)")
+    return bonus, reasons

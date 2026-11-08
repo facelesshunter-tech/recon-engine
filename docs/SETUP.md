@@ -35,6 +35,22 @@ so you don't need all of them to get started.
 | [trufflehog](https://github.com/trufflesecurity/trufflehog) | see repo | `github_recon.py` (optional) |
 | [FavFreak](https://github.com/devanshbatham/FavFreak) | `git clone` it; point `tools.favfreak` at `favfreak.py` | `favicon_fingerprint.py` (optional — native hashing works without it) |
 | [waymore](https://github.com/xnl-h4ck3r/waymore) | `pip install waymore` | `csp_misc.py` (optional) |
+| [assetfinder](https://github.com/tomnomnom/assetfinder) | `go install github.com/tomnomnom/assetfinder@latest` | `subdomain_passive.py` |
+| [dnsx](https://github.com/projectdiscovery/dnsx) | `go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest` | `dns_intel.py` |
+| [tlsx](https://github.com/projectdiscovery/tlsx) | `go install github.com/projectdiscovery/tlsx/cmd/tlsx@latest` | `tls_probe.py` |
+| [wafw00f](https://github.com/EnableSecurity/wafw00f) | `pip install wafw00f` | `waf_detect.py` |
+| [uncover](https://github.com/projectdiscovery/uncover) | `go install github.com/projectdiscovery/uncover/cmd/uncover@latest` | `internet_intel.py` |
+| [ffuf](https://github.com/ffuf/ffuf) | `go install github.com/ffuf/ffuf/v2@latest` | `content_discovery.py` (needs a wordlist -- [SecLists](https://github.com/danielmiessler/SecLists) at `~/tools/SecLists` is the default) |
+| [katana](https://github.com/projectdiscovery/katana) | `go install github.com/projectdiscovery/katana/cmd/katana@latest` | `web_crawl.py` |
+| [gau](https://github.com/lc/gau) | `go install github.com/lc/gau/v2/cmd/gau@latest` | `web_crawl.py` |
+| [xnLinkFinder](https://github.com/xnl-h4ck3r/xnLinkFinder) | `pip install xnLinkFinder` | `js_analysis.py` |
+| [SecretFinder](https://github.com/m4ll0k/SecretFinder) | `git clone` it; point `tools.secretfinder` at `SecretFinder.py` | `js_analysis.py` |
+| [GitDorker](https://github.com/obheda12/GitDorker) | `git clone` it; needs its `Dorks/` directory alongside | `github_recon.py: gitdorker_scan` (needs GitHub tokens) |
+| [cloud_enum](https://github.com/initstring/cloud_enum) | `git clone` it; point `tools.cloud_enum` at `cloud_enum.py` | `open_storage.py: cloud_enum_scan` |
+| [Arjun](https://github.com/s0md3v/Arjun) | `pip install arjun` | `parameter_discovery.py` |
+| [x8](https://github.com/Sh1Yo/x8) | download a release binary | `parameter_discovery.py` |
+| [Kiterunner](https://github.com/assetnote/kiterunner) | download a release binary (`kr`) -- no clean `go install` path | `api_discovery.py` (uses Assetnote's hosted wordlists by default) |
+| [nuclei](https://github.com/projectdiscovery/nuclei) | `go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest` | `vuln_verify.py` -- used **only** for scoped CVE-watchlist verification, never general scanning |
 
 Run `recon-engine config-check` any time to see exactly which of these
 are currently detected on `PATH`.
@@ -56,6 +72,11 @@ recommendation):
 5. **Paid/limited**: whoxy, whoisxmlapi, host.io, SecurityTrails,
    Crunchbase (enterprise sales contact, not self-serve), sec-api.io
    (free tier available), greyhatwarfare
+6. **Censys** (search.censys.io -- Personal Access Token, format
+   `API_ID:SECRET`) and **urlscan.io** (free tier) -- both optional,
+   feed `internet_intel.py` alongside Uncover (which itself needs no
+   dedicated key beyond whatever Shodan/Censys/etc. keys you already
+   have configured for the underlying engines it queries)
 
 ## 4. Not wired up (or not automated) — and why (read this before filing an issue)
 
@@ -130,3 +151,43 @@ recon-engine sources --target example.com
 ```
 
 Only scan targets you are authorized to test.
+
+## 6. A senior-methodology deep-dive run, step by step
+
+Everything in step 5 covers the cheap, passive-by-default stages
+(`--subfinder`/`--amass`/`--crtsh`/`--assetfinder`, DNS validation, live
+validation, TLS probing -- all on by default). The deep-dive stages below
+are deliberately opt-in, because they're either active/intrusive, slow,
+or both -- turn them on one at a time, in roughly this order, the same
+way a senior hunter would stage their own manual workflow:
+
+```bash
+# 1. Widen passive discovery as far as it goes (GitHub + GitDorker +
+#    cloud_enum + Uncover), still zero traffic to the target itself:
+recon-engine scan example.com --github --gitdorker --gitdorker-keyword example \
+  --cloud-enum --cloud-enum-keyword example --uncover --uncover-query 'hostname:"example.com"'
+
+# 2. Confirm you actually want to generate live traffic, then fingerprint
+#    what's really there (WAF + screenshots + favicon):
+recon-engine scan example.com --waf-detect --screenshots --favicon --favicon-db ./favfreak-hashes.json
+
+# 3. Crawl what's live and mine what used to be live (feeds JS analysis):
+recon-engine scan example.com --web-crawl --js-analysis
+
+# 4. Now that you have real endpoints (from step 3), look for hidden
+#    parameters and undocumented API routes on the ones worth your time:
+recon-engine scan example.com --parameter-discovery --api-discovery
+
+# 5. Only once scoring has flagged a host against the edge-device CVE
+#    watchlist, confirm it with a SCOPED nuclei run (never general
+#    scanning) and sharpen the score with live EPSS/KEV data:
+recon-engine scan example.com --vuln-verify --cve-intel
+```
+
+Every run produces three separate, "well arranged and neat" output
+files per target (see the README's "What a scan produces" section) --
+the ranked worklist, the architecture/tech-detection map, and (if any
+deep-dive stage was enabled) the raw auxiliary findings file. Nothing
+from the deep-dive stages gets silently merged into the ranked
+worklist; it's kept in its own file precisely so you can tell "what
+should I look at first" apart from "what did every tool actually find."

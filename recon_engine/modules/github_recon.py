@@ -22,9 +22,13 @@ deck's named techniques:
 
 from __future__ import annotations
 
+import csv
 import itertools
 import logging
+import tempfile
 import urllib.parse
+from dataclasses import dataclass
+from pathlib import Path
 
 from recon_engine.config import Config
 from recon_engine.utils.subprocess_runner import run
@@ -111,6 +115,74 @@ def dork_urls(target_term: str) -> dict[str, str]:
         encoded = urllib.parse.quote(query)
         urls[term] = f"https://github.com/search?q={encoded}&type=Code"
     return urls
+
+
+@dataclass
+class GitDorkHit:
+    user: str
+    dork: str
+    keyword: str
+    url: str
+    result_count: str
+
+
+def gitdorker_scan(
+    config: Config,
+    keyword: str,
+    *,
+    dorks_file: str | None = None,
+    threads: int = 3,
+    timeout: int = 1800,
+) -> list[GitDorkHit]:
+    """GitDorker -- a more full-featured alternative/supplement to this
+    module's own built-in dork_urls() generator, with its own maintained
+    dork database and actual GitHub code-search API execution (dork_urls()
+    only generates browser-paste URLs, it doesn't execute searches itself).
+    Real output naming convention and CSV columns verified directly: the
+    tool appends `_gh_dorks.csv` to whatever `-o` prefix is given, and the
+    keyword-search CSV header is exactly
+    ['USER', 'DORK', 'KEYWORD', 'URL', 'NUMBER OF RESULTS']."""
+    path = config.tool_path("gitdorker") or config.tool_path("GitDorker")
+    if not path:
+        logger.warning("gitdorker not found on PATH -- install from github.com/obheda12/GitDorker")
+        return []
+
+    tokens = config.api_keys_list("github")
+    if not tokens:
+        logger.warning("no GitHub tokens configured (config.api_keys.github) -- gitdorker_scan skipped")
+        return []
+
+    dorks_file = dorks_file or str(
+        Path.home() / "tools" / "GitDorker" / "Dorks" / "medium_dorks.txt"
+    )
+    if not Path(dorks_file).is_file():
+        logger.warning("dorks file not found at %s -- pass dorks_file explicitly", dorks_file)
+        return []
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_prefix = str(Path(tmpdir) / "scan")
+        pool = TokenPool(tokens)
+        argv = [path, "-d", dorks_file, "-k", keyword, "-t", pool.next(), "-o", out_prefix, "-e", str(threads)]
+        result = run(argv, timeout=timeout)
+
+        csv_path = Path(f"{out_prefix}_gh_dorks.csv")
+        hits: list[GitDorkHit] = []
+        if csv_path.is_file() and csv_path.stat().st_size > 0:
+            with open(csv_path, newline="") as f:
+                reader = csv.DictReader(f, fieldnames=["USER", "DORK", "KEYWORD", "URL", "NUMBER OF RESULTS"])
+                for row in reader:
+                    hits.append(
+                        GitDorkHit(
+                            user=row.get("USER", ""),
+                            dork=row.get("DORK", ""),
+                            keyword=row.get("KEYWORD", ""),
+                            url=row.get("URL", ""),
+                            result_count=row.get("NUMBER OF RESULTS", ""),
+                        )
+                    )
+        elif not result.ok:
+            logger.warning("gitdorker exited %s: %s", result.returncode, result.stderr.strip()[:300])
+    return hits
 
 
 def trufflehog_scan(config: Config, repo_or_org_url: str, *, timeout: int = 1800) -> str:

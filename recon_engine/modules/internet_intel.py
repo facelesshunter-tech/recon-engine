@@ -1,0 +1,124 @@
+"""Internet-wide asset intelligence and passive historical content (TBHM
+KB §4, "internet-wide asset intelligence" category + urlscan.io).
+
+Three sources, each a different kind of intelligence:
+
+1. `uncover_search` -- wraps ProjectDiscovery's Uncover, which queries
+   Shodan/Censys/FOFA/etc. through ONE interface rather than hand-rolling
+   a separate client per search engine -- this is deliberately the
+   consolidation layer recommended instead of wiring up FOFA/ZoomEye as
+   separate low-priority modules.
+
+2. `censys_search` -- a direct Censys API call for when you want Censys's
+   own richer, structured host/cert data rather than Uncover's flattened
+   multi-engine output.
+
+3. `urlscan_search` / `urlscan_submit` -- urlscan.io's passive archive of
+   previously-scanned pages (URLs, requests made, detected technology),
+   a different kind of historical intelligence than Wayback/crt.sh:
+   it's built from other researchers' and automated systems' prior scans
+   of a domain, not just DNS/cert history.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from recon_engine.config import Config
+from recon_engine.utils.subprocess_runner import run
+from recon_engine.utils.http import get_json, post_json
+from recon_engine.utils.dedupe import dedupe_strings
+
+logger = logging.getLogger("recon_engine.internet_intel")
+
+CENSYS_SEARCH_URL = "https://search.censys.io/api/v2/hosts/search"
+URLSCAN_SEARCH_URL = "https://urlscan.io/api/v1/search/"
+URLSCAN_SUBMIT_URL = "https://urlscan.io/api/v1/scan/"
+
+
+def uncover_search(
+    config: Config,
+    query: str,
+    *,
+    engines: list[str] | None = None,
+    limit: int = 100,
+    timeout: int = 60,
+) -> list[str]:
+    """Queries multiple internet-scan engines through one CLI. `query` is
+    typically the apex domain (e.g. `hostname:"example.com"` works across
+    most of Uncover's supported engines' own query syntax) -- engines
+    without a configured key are simply skipped by Uncover itself, no
+    special handling needed here."""
+    path = config.tool_path("uncover")
+    if not path:
+        logger.warning("uncover not found on PATH -- install with: go install github.com/projectdiscovery/uncover/cmd/uncover@latest")
+        return []
+    engines = engines or ["shodan", "censys"]
+    argv = [path, "-silent", "-q", query, "-e", ",".join(engines), "-f", "ip:port", "-limit", str(limit)]
+    result = run(argv, timeout=timeout)
+    if not result.ok and not result.stdout:
+        logger.warning("uncover exited %s: %s", result.returncode, result.stderr.strip()[:300])
+    return dedupe_strings(result.stdout.splitlines())
+
+
+def censys_search(config: Config, query: str, *, per_page: int = 50) -> list[dict]:
+    """Direct Censys Search API call. Requires a Censys Personal Access
+    Token configured as config.api_keys.censys (format: "API_ID:SECRET"
+    per Censys's own basic-auth convention)."""
+    key = config.api_key("censys")
+    if not key or ":" not in key:
+        logger.warning(
+            "no valid censys credentials configured (config.api_keys.censys, "
+            "format 'API_ID:SECRET') -- censys_search skipped"
+        )
+        return []
+    api_id, api_secret = key.split(":", 1)
+    import requests
+
+    try:
+        resp = requests.get(
+            CENSYS_SEARCH_URL,
+            params={"q": query, "per_page": per_page},
+            auth=(api_id, api_secret),
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        logger.warning("censys search failed: %s", e)
+        return []
+    return data.get("result", {}).get("hits", [])
+
+
+def urlscan_search(config: Config, domain: str, *, size: int = 100) -> list[dict]:
+    """Search urlscan.io's public archive for prior scans of a domain --
+    a free-tier API key works for search (submitting new scans needs a
+    paid key for anything beyond public visibility)."""
+    key = config.api_key("urlscan")
+    headers = {"API-Key": key} if key else {}
+    if not key:
+        logger.info("no urlscan API key configured -- querying the public (unauthenticated, rate-limited) endpoint")
+    data = get_json(URLSCAN_SEARCH_URL, params={"q": f"domain:{domain}", "size": size}, headers=headers, timeout=30)
+    if not data:
+        return []
+    return data.get("results", [])
+
+
+def urlscan_submit(config: Config, url: str, *, visibility: str = "unlisted") -> dict:
+    """Submit a URL for a fresh urlscan.io scan. Requires an API key.
+    `visibility` defaults to "unlisted" (not "public") so a scan of an
+    in-scope-but-not-yet-public asset doesn't get indexed for everyone
+    else to see -- deliberately NOT "private", since private scans
+    require a paid plan and unlisted is the right default for a tool
+    other people might run against programs they don't own."""
+    key = config.api_key("urlscan")
+    if not key:
+        logger.warning("no urlscan API key configured (config.api_keys.urlscan) -- urlscan_submit skipped")
+        return {}
+    data = post_json(
+        URLSCAN_SUBMIT_URL,
+        json_body={"url": url, "visibility": visibility},
+        headers={"API-Key": key},
+        timeout=30,
+    )
+    return data or {}

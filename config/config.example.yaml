@@ -35,6 +35,8 @@ api_keys:
   c99: ""                        # community.riskiq.com/settings (RiskIQ) -- also used by subdomainfinder.c99.nl API below
   sec_api: ""                    # sec-api.io -- free-tier signup; acquisitions.py subsidiary lookup from SEC filings
   greyhatwarfare: ""             # buckets.grayhatwarfare.com -- open cloud-storage-bucket search (KB §22.5)
+  censys: ""                     # search.censys.io -- Personal Access Token, format "API_ID:SECRET" (internet_intel.censys_search)
+  urlscan: ""                    # urlscan.io/user/profile -- free-tier key works for search; submit needs it too (internet_intel.urlscan_*)
   # FacebookCT requires an app, not a single key -- see docs/SETUP.md for
   # the full "create app -> get client token -> get secret" walkthrough
   # described in the deck.
@@ -74,6 +76,7 @@ tools:
   subfinder: ""
   amass: ""
   bbot: ""
+  assetfinder: ""                # go install github.com/tomnomnom/assetfinder@latest -- fourth passive subdomain source
   puredns: ""
   dnsgen: ""
   alterx: ""
@@ -81,12 +84,27 @@ tools:
   rustscan: ""
   smap: ""
   httpx: ""                      # must be projectdiscovery's httpx, NOT the Python `httpx` pip package
+  dnsx: ""                       # go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest -- bulk DNS resolution/wildcard filtering (dns_intel.py)
+  tlsx: ""                       # go install github.com/projectdiscovery/tlsx/cmd/tlsx@latest -- per-host TLS/cert probing (tls_probe.py)
+  wafw00f: ""                    # pip install wafw00f -- WAF fingerprinting (waf_detect.py)
+  uncover: ""                    # go install github.com/projectdiscovery/uncover/cmd/uncover@latest -- Shodan/Censys/etc. via one interface (internet_intel.py)
+  ffuf: ""                       # go install github.com/ffuf/ffuf/v2@latest -- directory/file content discovery (content_discovery.py)
+  katana: ""                     # go install github.com/projectdiscovery/katana/cmd/katana@latest -- JS-aware crawling (web_crawl.py)
+  gau: ""                        # go install github.com/lc/gau/v2/cmd/gau@latest -- historical URL mining (web_crawl.py)
+  xnLinkFinder: ""                # pip install xnLinkFinder -- endpoint extraction from JS (js_analysis.py)
+  secretfinder: ""                # github.com/m4ll0k/SecretFinder -- secret discovery in JS (js_analysis.py)
+  arjun: ""                      # pip install arjun -- hidden parameter discovery (parameter_discovery.py)
+  x8: ""                         # github.com/Sh1Yo/x8 release binary -- hidden parameter discovery (parameter_discovery.py)
+  kr: ""                         # github.com/assetnote/kiterunner release binary -- API route brute-forcing (api_discovery.py)
+  nuclei: ""                     # go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest -- used ONLY for scoped CVE-watchlist verification (vuln_verify.py)
   go-stare: ""
   docker: ""                     # only needed for the gowitness_scan_docker() fallback path
   gowitness: ""                  # go install github.com/sensepost/gowitness@latest -- native, no Docker needed; default scan --screenshots engine
   eyewitness: ""                 # see docs/SETUP.md for the no-sudo install path; use for its default-cred-checker against your top-scored hosts, not as the default scan engine
   VHostScan: ""
   github-subdomains: ""
+  gitdorker: ""                   # github.com/obheda12/GitDorker -- maintained dork database + real search execution (github_recon.gitdorker_scan)
+  cloud_enum: ""                  # github.com/initstring/cloud_enum -- brute-forces AWS/Azure/GCP storage names (open_storage.cloud_enum_scan)
   trufflehog: ""
   favfreak: ""
   waymore: ""

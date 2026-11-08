@@ -70,6 +70,28 @@ def run_bbot(config: Config, domain: str, *, modules: str = "subdomain-enum", ti
     return dedupe_strings(hits)
 
 
+def run_assetfinder(config: Config, domain: str, *, timeout: int = 180) -> list[str]:
+    """tomnomnom's assetfinder -- a fourth passive source alongside
+    Subfinder/Amass/BBOT. Added by explicit request despite meaningfully
+    overlapping with Subfinder/Amass's own source lists: the pipeline's
+    dedupe_assets() step means running it costs you nothing but a little
+    extra runtime -- any subdomain it finds that the others also found
+    collapses into one entry with both sources recorded (feeds the
+    source-reliability scorecard); anything it finds that the others
+    didn't is pure upside. `-subs-only` restricts output to actual
+    subdomains of the target rather than also returning the root domain
+    itself and unrelated lookalikes."""
+    path = config.tool_path("assetfinder")
+    if not path:
+        logger.warning("assetfinder not found on PATH -- install with: go install github.com/tomnomnom/assetfinder@latest")
+        return []
+    argv = [path, "--subs-only", domain]
+    result = run(argv, timeout=timeout)
+    if not result.ok and not result.stdout:
+        logger.warning("assetfinder exited %s: %s", result.returncode, result.stderr.strip()[:300])
+    return dedupe_strings(result.stdout.splitlines())
+
+
 def c99_subdomainfinder(config: Config, domain: str) -> list[str]:
     """TBHM KB §20: subdomainfinder.c99.nl called out as "Best Web
     Resource" for one-stop subdomain discovery. Uses c99.nl's documented
@@ -116,6 +138,7 @@ def passive_enumerate(
     use_bbot: bool = False,
     use_crtsh: bool = True,
     use_c99: bool = False,
+    use_assetfinder: bool = True,
 ) -> dict[str, list[str]]:
     """Run every available passive source and return per-source results
     (not pre-merged) so the pipeline's dedupe step can track which
@@ -136,4 +159,6 @@ def passive_enumerate(
             out["crtsh"] = []
     if use_c99:
         out["c99"] = c99_subdomainfinder(config, domain)
+    if use_assetfinder:
+        out["assetfinder"] = run_assetfinder(config, domain)
     return out

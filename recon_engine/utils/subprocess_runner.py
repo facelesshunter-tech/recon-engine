@@ -65,7 +65,15 @@ def run(
     except FileNotFoundError as e:
         raise ToolNotFoundError(argv[0]) from e
     except subprocess.TimeoutExpired as e:
-        return RunResult(returncode=124, stdout=e.stdout or "", stderr=f"timed out after {timeout}s")
+        # Python quirk, verified directly: TimeoutExpired.stdout/.stderr are
+        # always raw bytes, even when text=True was passed to subprocess.run
+        # -- unlike the normal successful-completion path, which decodes
+        # properly. Decoding manually here avoids leaking `b'...'`-repr
+        # bytes objects into every caller downstream (found while testing
+        # katana_crawl() against a slow target).
+        partial_stdout = e.stdout.decode("utf-8", errors="replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
+        partial_stderr = e.stderr.decode("utf-8", errors="replace") if isinstance(e.stderr, bytes) else (e.stderr or "")
+        return RunResult(returncode=124, stdout=partial_stdout, stderr=f"timed out after {timeout}s: {partial_stderr}")
 
     result = RunResult(proc.returncode, proc.stdout, proc.stderr)
     if check and not result.ok:

@@ -43,6 +43,13 @@ def get_json(
         return None
 
 
+def strip_scheme(url: str) -> str:
+    """`https://host.example.com:8443/path` -> `host.example.com`. Used
+    everywhere a tool needs a bare hostname (dnsx, tlsx) but the pipeline
+    only has full httpx-style URLs on hand (LiveHost.url)."""
+    return url.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
+
+
 def post_json(
     url: str,
     *,

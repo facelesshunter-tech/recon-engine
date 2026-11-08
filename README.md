@@ -1,12 +1,22 @@
 # recon-engine
 
 A bug bounty reconnaissance orchestrator built to cover **every technique**
-in Jason Haddix's "The Bug Hunter's Methodology — Day One" training deck:
-ASN/IP discovery, subdomain enumeration (passive, brute-force, and
-pattern-based permutation), GitHub secret/subdomain hunting, WHOIS/DNS/
-IP/DMARC pivoting, VHost discovery, live-host triage, favicon
-fingerprinting, and CVE-aware asset prioritization — wired together into
-one pipeline with persistent state for change detection over time.
+in Jason Haddix's "The Bug Hunter's Methodology — Day One" training deck,
+plus the additional senior-recon tooling a real engagement needs beyond
+it: ASN/IP discovery, subdomain enumeration (passive, brute-force, and
+pattern-based permutation) with automatic cross-tool deduplication,
+GitHub secret/subdomain hunting (including GitDorker), WHOIS/DNS/IP/DMARC
+pivoting, DNS validation and wildcard filtering (dnsx), VHost discovery,
+live-host triage with TLS/cert probing (tlsx) and WAF fingerprinting
+(wafw00f), content discovery (ffuf), JS-aware crawling and historical URL
+mining (Katana/gau), JS endpoint/secret/source-map extraction, hidden
+parameter discovery (Arjun + x8), API route brute-forcing (Kiterunner),
+favicon fingerprinting, scoped CVE-watchlist verification (nuclei,
+enriched with live EPSS/CISA-KEV data), and CVE-aware asset
+prioritization — wired together into one staged, senior-methodology
+pipeline ("the right tool at the right time," passive before active,
+cheap before expensive) with persistent state for change detection over
+time.
 
 See [`docs/MODULE-MAP.md`](docs/MODULE-MAP.md) for the complete,
 section-by-section accounting of which source-material concept maps to
@@ -40,12 +50,22 @@ API key's signup link: [`docs/SETUP.md`](docs/SETUP.md).
 
 ## What a scan produces
 
+Three separate, purpose-built output files per target -- deliberately
+not merged into one blob, so "what should I look at first" (ranked
+worklist) stays distinct from "what does this infrastructure actually
+look like" (architecture map) and "what did every opt-in deep-dive tool
+find" (raw auxiliary findings):
+
 ```
 recon-output/
-├── assets.db              # persistent SQLite asset inventory (all history)
-├── example.com.json       # this run's new assets + ranked live hosts
-├── example.com.md         # same, human-readable
-└── screenshots/example.com/   # if --screenshots was passed
+├── assets.db                      # persistent SQLite asset inventory (all history)
+├── example.com.json                # this run's new assets + ranked live hosts
+├── example.com.md                  # same, human-readable ranked worklist
+├── example.com-architecture.md     # per-host tech stack, TLS/cert, WAF, DNS -- the infra map
+├── example.com-findings.json       # raw results from any opt-in deep-dive stage that ran
+│                                    # (GitDorker, cloud_enum, ffuf, Katana/gau, JS analysis,
+│                                    #  Arjun/x8, Kiterunner, scoped nuclei verification)
+└── screenshots/example.com/        # if --screenshots was passed
 ```
 
 ```bash
@@ -62,9 +82,9 @@ recon_engine/
   config.py        # API key + tool-path resolution (config.yaml + env vars)
   state.py          # SQLite asset inventory, new-asset / source-reliability queries
   models.py         # shared Asset / LiveHost data model
-  modules/          # one file per TBHM technique -- see docs/MODULE-MAP.md
-  scoring/           # CVE-watchlist + "stuff to watch for" asset ranking
-  reporting/          # JSON + Markdown export
+  modules/          # one file per technique -- see docs/MODULE-MAP.md
+  scoring/           # CVE-watchlist + "stuff to watch for" asset ranking, EPSS/CISA-KEV enrichment
+  reporting/          # export.py (ranked worklist, JSON+Markdown), architecture.py (infra/tech-detection map)
 docs/
   MODULE-MAP.md      # every concept -> module, with honest implementation status
   ARCHITECTURE.md
