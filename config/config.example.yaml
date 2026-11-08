@@ -1,0 +1,105 @@
+# recon-engine configuration
+#
+# Copy this file to config/config.yaml (or ~/.config/recon-engine/config.yaml)
+# and fill in whatever keys you actually have. recon-engine is designed to
+# work with ZERO keys configured (free-tier/no-key sources + installed
+# binaries still function) and gets progressively more capable as you add
+# keys -- this mirrors TBHM's own stated priority order, reproduced below.
+#
+# Every key can also be set via environment variable instead of living in
+# this file: RECON_ENGINE_<SOURCE>_API_KEY (e.g. RECON_ENGINE_SHODAN_API_KEY).
+#
+# Priority order per TBHM KB §12.4 ("API Keys Are Mandatory for Effectiveness"):
+#   1. Chaos            -- free, projectdiscovery.io/chaos
+#   2. GitHub tokens     -- free, github.com/settings/tokens (get SEVERAL)
+#   3. Shodan            -- freemium, shodan.io
+#   4. Free/cheap misc   -- FacebookCT, c99/RiskIQ, dnsdumpster
+#   5. Paid/limited      -- everything else below
+
+api_keys:
+  # --- Priority 1 ------------------------------------------------------
+  chaos: ""                      # projectdiscovery.io/chaos -- feeds subfinder
+
+  # --- Priority 2: GitHub -- a LIST of tokens is strongly recommended. ---
+  # TBHM explicitly says GitHub code search needs "many API keys and many
+  # runs" to be exhaustive -- recon-engine round-robins across all of these.
+  github:
+    - ""   # github.com/settings/tokens (classic, no special scopes needed for code search)
+    - ""
+    - ""
+
+  # --- Priority 3 --------------------------------------------------------
+  shodan: ""                     # shodan.io/account -- used by port_scan.smap_scan
+
+  # --- Priority 4: free/cheap -------------------------------------------
+  c99: ""                        # community.riskiq.com/settings (RiskIQ) -- also used by subdomainfinder.c99.nl API below
+  sec_api: ""                    # sec-api.io -- free-tier signup; acquisitions.py subsidiary lookup from SEC filings
+  greyhatwarfare: ""             # buckets.grayhatwarfare.com -- open cloud-storage-bucket search (KB §22.5)
+  # FacebookCT requires an app, not a single key -- see docs/SETUP.md for
+  # the full "create app -> get client token -> get secret" walkthrough
+  # described in the deck.
+  facebookct_app_id: ""
+  facebookct_client_token: ""
+  facebookct_secret: ""
+
+  # --- Priority 5: paid/limited sources (named in the deck, not all with
+  # a self-serve signup -- see docs/SETUP.md for which require sales
+  # contact vs. instant signup) -----------------------------------------
+  whoxy: ""                      # api.whoxy.com -- reverse_whois.py (~$10/1000 queries)
+  whoisxmlapi: ""                # whoisxmlapi.com -- reverse_dns.py shared-nameserver pivot
+  hostio: ""                     # host.io -- reverse_ip.py
+  securitytrails: ""             # securitytrails.com -- dmarc_pivot.py reverse search (best-effort, see module docstring)
+  crunchbase: ""                 # requires an ENTERPRISE agreement, not a free key -- see acquisitions.py
+  cisco_umbrella: ""             # named but not wired up to a specific module yet
+  dnsdb: ""                      # Farsight DNSDB -- feeds subfinder/amass as a source, not called directly by recon-engine
+  zetalytics: ""                 # named but not wired up to a specific module yet
+  spiderfoothx: ""               # named but not wired up to a specific module yet
+  netlas: ""                     # netlas.io -- feeds subfinder as a source
+  builtwith: ""                  # builtwith.com -- not called directly; relevant if you extend live_validation.py
+
+  # --- AI-assisted recon (ReconGPT / SubreconGPT, KB §10) -----------------
+  # Any OpenAI-compatible endpoint works -- set ai.api_base below to point
+  # at a different provider or a local model server if you're not using
+  # OpenAI itself.
+  openai: ""
+
+ai:
+  api_base: "https://api.openai.com/v1"
+  model: "gpt-4"
+
+# External tool binaries: leave blank to search PATH (default), or set an
+# explicit path if a tool isn't on PATH. See docs/SETUP.md for install
+# instructions for every tool named here.
+tools:
+  subfinder: ""
+  amass: ""
+  bbot: ""
+  puredns: ""
+  dnsgen: ""
+  alterx: ""
+  naabu: ""
+  rustscan: ""
+  smap: ""
+  httpx: ""                      # must be projectdiscovery's httpx, NOT the Python `httpx` pip package
+  go-stare: ""
+  docker: ""
+  eyewitness: ""
+  VHostScan: ""
+  github-subdomains: ""
+  trufflehog: ""
+  favfreak: ""
+  waymore: ""
+
+recon:
+  output_dir: "./recon-output"
+  # A fresh resolvers.txt is fetched automatically from trickest/resolvers
+  # if this is left blank and `scan --bruteforce`/`--permutation` is used
+  # without an explicit --resolvers path.
+  resolvers_path: ""
+
+# Point this at FavFreak's own fingerprint data file (or a
+# community-maintained favicon-hash database) if you want
+# favicon_fingerprint.py's match_against_database() to work. recon-engine
+# does not ship hardcoded hash values of its own -- see
+# recon_engine/modules/favicon_fingerprint.py for why.
+favicon_db_path: ""
