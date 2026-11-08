@@ -28,8 +28,7 @@ so you don't need all of them to get started.
 | [smap](https://github.com/s0md3v/Smap) | `go install github.com/s0md3v/smap/cmd/smap@latest` | `port_scan.py` (needs Shodan key) |
 | [httpx](https://github.com/projectdiscovery/httpx) | `go install github.com/projectdiscovery/httpx/cmd/httpx@latest` — **not** the Python `httpx` pip package | `live_validation.py` |
 | [go-stare](https://github.com/dwisiswant0/go-stare) | see repo | `screenshotting.py` |
-| [gowitness](https://github.com/sensepost/gowitness) | via Docker, see `screenshotting.py: gowitness_docker` | `screenshotting.py` (optional) |
-| [EyeWitness](https://github.com/RedSiege/EyeWitness) | see repo | `screenshotting.py` (optional, for default-cred-checker) |
+| [gowitness](https://github.com/sensepost/gowitness) | `go install github.com/sensepost/gowitness@latest` (v3, native -- no Docker needed) | `screenshotting.py` (recommended screenshot engine, default) |
 | [VHostScan](https://github.com/codingo/VHostScan) | `pip install VHostScan` | `vhost_scan.py` |
 | [github-subdomains](https://github.com/gwen001/github-subdomains) | `go install github.com/gwen001/github-subdomains@latest` | `github_recon.py` |
 | [trufflehog](https://github.com/trufflesecurity/trufflehog) | see repo | `github_recon.py` (optional) |
@@ -80,6 +79,16 @@ recommendation):
   (Microsoft changed `GetFederationInformation`'s behavior). Not
   reimplemented on purpose — see `msft_tenant.py` for the working
   replacement approach.
+- **EyeWitness**: originally wired up for its default-credential-checker
+  (the one feature TBHM calls out as still unmatched elsewhere), removed
+  by request in favor of `gowitness` (native, no system-level
+  dependencies). Its installer needs `sudo apt-get` for Firefox/geckodriver,
+  which this project won't run non-interactively. If you specifically want
+  the default-cred-checking feature back: `git clone
+  https://github.com/RedSiege/EyeWitness && cd EyeWitness/Python/setup &&
+  sudo ./setup.sh`, then point `tools.eyewitness` at it and reintroduce an
+  `eyewitness()` function in `screenshotting.py` matching the one removed
+  in this commit's history.
 
 ## 5. First run
 

@@ -40,6 +40,12 @@ def cli(ctx, config_path, verbose):
 @click.option("--bruteforce", "use_bruteforce", is_flag=True, default=False)
 @click.option("--permutation", "use_permutation", is_flag=True, default=False)
 @click.option("--screenshots", is_flag=True, default=False)
+@click.option(
+    "--screenshot-engine",
+    type=click.Choice(["gowitness", "go-stare"]),
+    default="gowitness",
+    help="gowitness (default): structured output, feeds titles/screenshot paths back into the report. go-stare: faster, images only.",
+)
 @click.option("--favicon", is_flag=True, default=False)
 @click.option("--wordlist", type=click.Path(exists=True, path_type=Path), default=None)
 @click.option("--resolvers", type=click.Path(exists=True, path_type=Path), default=None)
@@ -57,6 +63,7 @@ def scan(
     use_bruteforce,
     use_permutation,
     screenshots,
+    screenshot_engine,
     favicon,
     wordlist,
     resolvers,
@@ -87,6 +94,7 @@ def scan(
         use_bruteforce=use_bruteforce,
         use_permutation=use_permutation,
         use_screenshots=screenshots,
+        screenshot_engine=screenshot_engine,
         use_favicon=favicon,
         wordlist=wordlist,
         resolvers=resolvers,
@@ -169,7 +177,7 @@ def config_check(ctx):
 
     tools = [
         "subfinder", "amass", "bbot", "puredns", "dnsgen", "alterx", "naabu",
-        "rustscan", "smap", "httpx", "go-stare", "docker", "eyewitness",
+        "rustscan", "smap", "httpx", "go-stare", "gowitness", "docker",
         "VHostScan", "github-subdomains", "trufflehog", "favfreak", "waymore",
     ]
     click.echo("\nExternal tools:")

@@ -45,12 +45,15 @@ def export_markdown(target: str, new_assets: list[dict], ranked_hosts: list[Live
 
     lines.append(f"## Ranked live hosts ({len(ranked_hosts)})")
     lines.append("")
-    lines.append("| Score | URL | Status | Title | Tech | Reasons |")
-    lines.append("|---|---|---|---|---|---|")
+    lines.append("| Score | URL | Status | Title | Tech | Screenshot | Reasons |")
+    lines.append("|---|---|---|---|---|---|---|")
     for h in ranked_hosts:
         reasons = "; ".join(h.risk_reasons) if h.risk_reasons else ""
         tech = ", ".join(h.tech) if h.tech else ""
-        lines.append(f"| {h.risk_score:.1f} | {h.url} | {h.status_code} | {h.title or ''} | {tech} | {reasons} |")
+        screenshot = h.screenshot_path or ""
+        lines.append(
+            f"| {h.risk_score:.1f} | {h.url} | {h.status_code} | {h.title or ''} | {tech} | {screenshot} | {reasons} |"
+        )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines))

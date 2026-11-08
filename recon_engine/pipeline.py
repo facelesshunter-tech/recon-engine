@@ -51,6 +51,7 @@ class PipelineOptions:
     use_bruteforce: bool = False
     use_permutation: bool = False
     use_screenshots: bool = False
+    screenshot_engine: str = "gowitness"  # "gowitness" (recommended, structured output) or "go-stare" (faster, images only)
     use_favicon: bool = False
     wordlist: Path | None = None
     resolvers: Path | None = None
@@ -146,9 +147,23 @@ class Pipeline:
 
         # --- screenshotting ----------------------------------------------------
         if self.options.use_screenshots:
-            stages_run.append("screenshotting")
+            stages_run.append(f"screenshotting:{self.options.screenshot_engine}")
             screenshot_dir = self.options.output_dir / "screenshots" / target
-            screenshotting.go_stare(self.config, all_hosts, screenshot_dir)
+            if self.options.screenshot_engine == "go-stare":
+                screenshotting.go_stare(self.config, all_hosts, screenshot_dir)
+            else:
+                gw_results = screenshotting.gowitness_scan(self.config, all_hosts, screenshot_dir)
+                # gowitness returns structured per-URL data (title, status,
+                # screenshot path) -- fold it straight into the matching
+                # LiveHost objects so the final report doesn't need a
+                # separate screenshot index to cross-reference by hand.
+                by_url = {r.url: r for r in gw_results}
+                for h in live_hosts:
+                    gw = by_url.get(h.url)
+                    if gw:
+                        h.screenshot_path = gw.screenshot_path
+                        if not h.title and gw.title:
+                            h.title = gw.title
 
         # --- scoring / prioritization ---------------------------------------
         stages_run.append("scoring")
