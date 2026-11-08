@@ -2,20 +2,29 @@
 
 The deck names several tools and explicitly says "this whole section is
 very much user preference" -- no single canonical tool. This module
-supports go-stare (fast, lightweight, no browser install) and gowitness
-(native binary -- v3 no longer requires Docker at all, a straightforward
-improvement over the deck's own docker-based example invocation).
+supports all three:
 
-EyeWitness was originally wired up here for its default-credential-checker
-feature, which the deck calls out as a still-unmatched reason to use it
-despite being the oldest tool in the list. It has been deliberately
-removed by request: its installer requires sudo apt-get for system
-packages (Firefox/geckodriver), which this project won't run
-non-interactively, and gowitness v3 covers the core screenshotting need
-natively with zero such dependency. Its default-credential-checking
-capability is NOT replaced here -- if you need that specific feature back,
-EyeWitness's own setup script is the way to get it
-(see docs/SETUP.md), run manually.
+- `go_stare` -- fast, lightweight, no browser install needed.
+- `gowitness_scan` -- the default/recommended engine. Native binary (v3
+  no longer requires Docker), returns structured per-host data (title,
+  status, screenshot path) that the pipeline folds directly into the
+  final report.
+- `eyewitness` -- kept specifically for its default-credential-checker,
+  the one capability the deck calls out as still unmatched elsewhere,
+  despite EyeWitness being the oldest tool in this list. Its official
+  installer insists on `sudo apt-get`, which this project won't run
+  non-interactively -- but in practice every system dependency it wants
+  (Chromium, chromedriver, Xvfb, jq, cmake) is commonly already present,
+  leaving only a couple of pure-Python pip packages to install by hand.
+  See docs/SETUP.md for the exact no-sudo install path that was actually
+  used.
+
+Not wired into the automated `scan --screenshots` pipeline by design --
+unlike go-stare/gowitness, EyeWitness is meaningfully slower and its real
+value (default-cred checking) is best spent deliberately, against your
+top-scored hosts from `scoring/prioritize.py` after a normal scan, not
+blanket-run against every discovered host. Call `eyewitness()` directly
+for that targeted second pass.
 """
 
 from __future__ import annotations
@@ -162,3 +171,29 @@ def gowitness_scan_docker(
     result = run(argv, timeout=timeout)
     if not result.ok:
         logger.warning("gowitness docker run failed: %s", result.stderr.strip()[:300])
+
+
+def eyewitness(config: Config, hosts_file: Path, output_dir: Path, *, timeout: int = 1800) -> Path:
+    """Run EyeWitness specifically for its default-credential-checker --
+    see this module's docstring for why it's not part of the automated
+    `scan --screenshots` pipeline. Intended usage: after a normal scan,
+    take the top N hosts from the risk-ranked report and run this
+    against just those, not against every discovered host.
+
+    Writes hosts_file's contents are NOT read by this function -- it's
+    passed straight through to EyeWitness's own `-f` flag, so hosts_file
+    must already exist on disk (one URL per line) before calling this.
+    """
+    path = config.tool_path("eyewitness") or config.tool_path("EyeWitness")
+    if not path:
+        logger.warning(
+            "EyeWitness not found on PATH -- see docs/SETUP.md for the no-sudo "
+            "install path (most of its deps are usually already present)"
+        )
+        return output_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+    argv = [path, "--web", "-f", str(hosts_file), "-d", str(output_dir), "--no-prompt"]
+    result = run(argv, timeout=timeout)
+    if not result.ok and not (output_dir / "report.html").is_file():
+        logger.warning("EyeWitness run failed: %s", result.stderr.strip()[:300])
+    return output_dir

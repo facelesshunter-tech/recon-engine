@@ -28,7 +28,8 @@ so you don't need all of them to get started.
 | [smap](https://github.com/s0md3v/Smap) | `go install github.com/s0md3v/smap/cmd/smap@latest` | `port_scan.py` (needs Shodan key) |
 | [httpx](https://github.com/projectdiscovery/httpx) | `go install github.com/projectdiscovery/httpx/cmd/httpx@latest` — **not** the Python `httpx` pip package | `live_validation.py` |
 | [go-stare](https://github.com/dwisiswant0/go-stare) | see repo | `screenshotting.py` |
-| [gowitness](https://github.com/sensepost/gowitness) | `go install github.com/sensepost/gowitness@latest` (v3, native -- no Docker needed) | `screenshotting.py` (recommended screenshot engine, default) |
+| [gowitness](https://github.com/sensepost/gowitness) | `go install github.com/sensepost/gowitness@latest` (v3, native -- no Docker needed) | `screenshotting.py` (default `scan --screenshots` engine) |
+| [EyeWitness](https://github.com/RedSiege/EyeWitness) | see §4 below -- usually no-sudo | `screenshotting.py` (optional, for default-cred-checker; not part of the automated pipeline) |
 | [VHostScan](https://github.com/codingo/VHostScan) | `pip install VHostScan` | `vhost_scan.py` |
 | [github-subdomains](https://github.com/gwen001/github-subdomains) | `go install github.com/gwen001/github-subdomains@latest` | `github_recon.py` |
 | [trufflehog](https://github.com/trufflesecurity/trufflehog) | see repo | `github_recon.py` (optional) |
@@ -56,7 +57,7 @@ recommendation):
    Crunchbase (enterprise sales contact, not self-serve), sec-api.io
    (free tier available), greyhatwarfare
 
-## 4. Not wired up — and why (read this before filing an issue)
+## 4. Not wired up (or not automated) — and why (read this before filing an issue)
 
 - **Tracxn, Pitchbook, OCCRP Aleph**: browse-only / enterprise-gated web
   tools with no public API suited to this use case.
@@ -79,16 +80,43 @@ recommendation):
   (Microsoft changed `GetFederationInformation`'s behavior). Not
   reimplemented on purpose — see `msft_tenant.py` for the working
   replacement approach.
-- **EyeWitness**: originally wired up for its default-credential-checker
-  (the one feature TBHM calls out as still unmatched elsewhere), removed
-  by request in favor of `gowitness` (native, no system-level
-  dependencies). Its installer needs `sudo apt-get` for Firefox/geckodriver,
-  which this project won't run non-interactively. If you specifically want
-  the default-cred-checking feature back: `git clone
-  https://github.com/RedSiege/EyeWitness && cd EyeWitness/Python/setup &&
-  sudo ./setup.sh`, then point `tools.eyewitness` at it and reintroduce an
-  `eyewitness()` function in `screenshotting.py` matching the one removed
-  in this commit's history.
+- **EyeWitness**: kept alongside `gowitness` specifically for its
+  default-credential-checker, which TBHM calls out as still unmatched
+  elsewhere. Not part of the automated `scan --screenshots` pipeline by
+  design (see `screenshotting.py`'s module docstring) -- call
+  `screenshotting.eyewitness()` directly against a short list of your
+  top-scored hosts after a normal scan, not against everything.
+
+  Its official installer (`setup/setup.sh`) hard-requires root and
+  refuses to run otherwise -- but in practice almost everything it wants
+  (Chromium, chromedriver, Xvfb, jq, cmake) is commonly already present
+  on a system that's done any security-tool work, leaving only a couple
+  of pure-Python packages. The no-sudo path that actually worked:
+
+  ```bash
+  git clone https://github.com/RedSiege/EyeWitness.git ~/tools/EyeWitness
+  # Check what's actually missing before assuming you need the root-only installer:
+  which chromium chromedriver jq cmake Xvfb
+  python3 -c "import selenium, netaddr, psutil"
+  # Typically only this is missing:
+  pip3 install --user pyvirtualdisplay
+  pip3 install --user -r ~/tools/EyeWitness/setup/requirements.txt
+  # Verify:
+  python3 ~/tools/EyeWitness/Python/EyeWitness.py --web --single https://example.com -d /tmp/ew-test --no-prompt
+  ```
+
+  If your system genuinely lacks Chromium/chromedriver/Xvfb, you *will*
+  need `sudo apt-get install chromium chromium-driver xvfb jq cmake` (or
+  your distro's equivalents) for those specific packages -- there's no
+  way around installing a browser without root. The point above is just
+  that the official script assumes you need the *entire* list via root,
+  when usually you don't.
+
+  Point `tools.eyewitness` at a wrapper script (or the real binary) once
+  installed; a one-line shim like
+  `exec python3 "$HOME/tools/EyeWitness/Python/EyeWitness.py" "$@"`
+  saved as `~/.local/bin/eyewitness` (executable) is the simplest way to
+  get it discovered on `PATH` alongside everything else.
 
 ## 5. First run
 

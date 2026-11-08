@@ -177,7 +177,7 @@ def config_check(ctx):
 
     tools = [
         "subfinder", "amass", "bbot", "puredns", "dnsgen", "alterx", "naabu",
-        "rustscan", "smap", "httpx", "go-stare", "gowitness", "docker",
+        "rustscan", "smap", "httpx", "go-stare", "gowitness", "eyewitness", "docker",
         "VHostScan", "github-subdomains", "trufflehog", "favfreak", "waymore",
     ]
     click.echo("\nExternal tools:")
