@@ -51,28 +51,50 @@ class Config:
     # ---- API keys ------------------------------------------------------
 
     def api_key(self, source: str) -> Optional[str]:
-        """Look up an API key, preferring environment variables over the
-        config file so secrets never have to live on disk if you don't
-        want them to: RECON_ENGINE_<SOURCE>_API_KEY."""
+        """Look up a single API key, preferring environment variables over
+        the config file so secrets never have to live on disk if you
+        don't want them to: RECON_ENGINE_<SOURCE>_API_KEY.
+
+        For a source configured as a list (github's token pool), this
+        returns the first non-blank entry rather than the raw list --
+        callers that specifically want the full pool must use
+        api_keys_list() instead."""
         env_name = f"RECON_ENGINE_{source.upper()}_API_KEY"
         if env_name in os.environ:
             return os.environ[env_name]
-        return (self._data.get("api_keys", {}) or {}).get(source)
+        value = (self._data.get("api_keys", {}) or {}).get(source)
+        if isinstance(value, list):
+            for v in value:
+                if isinstance(v, str) and v.strip():
+                    return v
+            return None
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     def api_keys_list(self, source: str) -> list[str]:
         """Some sources (GitHub tokens especially -- TBHM explicitly
         recommends a *pool* of tokens to round-robin around rate limits)
-        support multiple keys."""
+        support multiple keys. Blank placeholder entries (the "" values
+        config.example.yaml ships for every unfilled slot) are filtered
+        out here, not just left for callers to deal with -- a list
+        containing only empty strings must behave as "nothing configured",
+        not as a non-empty list of blanks."""
         keys = (self._data.get("api_keys", {}) or {}).get(source)
         if keys is None:
             single = self.api_key(source)
             return [single] if single else []
         if isinstance(keys, str):
-            return [keys]
-        return list(keys)
+            return [keys] if keys.strip() else []
+        return [k for k in keys if isinstance(k, str) and k.strip()]
 
     def has(self, source: str) -> bool:
-        return bool(self.api_key(source) or self.api_keys_list(source))
+        """True iff there is at least one real (non-blank) value configured
+        for this source, whether it's a single-key or list-valued source.
+        Deliberately does NOT just check truthiness of api_key()/
+        api_keys_list()'s return values directly -- a non-empty Python list
+        of blank strings is still "nothing configured" here."""
+        return bool(self.api_keys_list(source))
 
     # ---- external tool binaries ----------------------------------------
 
