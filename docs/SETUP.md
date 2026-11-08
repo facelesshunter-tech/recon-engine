@@ -31,7 +31,7 @@ so you don't need all of them to get started.
 | [gowitness](https://github.com/sensepost/gowitness) | via Docker, see `screenshotting.py: gowitness_docker` | `screenshotting.py` (optional) |
 | [EyeWitness](https://github.com/RedSiege/EyeWitness) | see repo | `screenshotting.py` (optional, for default-cred-checker) |
 | [VHostScan](https://github.com/codingo/VHostScan) | `pip install VHostScan` | `vhost_scan.py` |
-| [github-subdomains](https://github.com/gwendal-lv/github-subdomains) | `go install github.com/gwendal-lv/github-subdomains@latest` | `github_recon.py` |
+| [github-subdomains](https://github.com/gwen001/github-subdomains) | `go install github.com/gwen001/github-subdomains@latest` | `github_recon.py` |
 | [trufflehog](https://github.com/trufflesecurity/trufflehog) | see repo | `github_recon.py` (optional) |
 | [FavFreak](https://github.com/devanshbatham/FavFreak) | `git clone` it; point `tools.favfreak` at `favfreak.py` | `favicon_fingerprint.py` (optional — native hashing works without it) |
 | [waymore](https://github.com/xnl-h4ck3r/waymore) | `pip install waymore` | `csp_misc.py` (optional) |

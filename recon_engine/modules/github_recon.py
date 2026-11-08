@@ -80,7 +80,7 @@ def github_subdomains(config: Config, domain: str, *, timeout: int = 300) -> lis
     path = config.tool_path("github-subdomains")
     tokens = config.api_keys_list("github")
     if not path:
-        logger.warning("github-subdomains not found on PATH -- install from github.com/gwendal-lv/github-subdomains")
+        logger.warning("github-subdomains not found on PATH -- install from github.com/gwen001/github-subdomains")
         return []
     if not tokens:
         logger.warning(
