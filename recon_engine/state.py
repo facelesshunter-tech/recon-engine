@@ -64,6 +64,17 @@ class AssetStore:
             (asset.target, asset.key()),
         )
         row = cur.fetchone()
+        # dedupe_assets() (called before upsert_many() in every real
+        # pipeline run) already merges every tool that found this exact
+        # asset into metadata["also_found_by"] -- but the `sources` column
+        # was only ever being seeded from the single asset.source value of
+        # whichever Asset object happened to "win" the in-memory dedup,
+        # silently losing every other contributor. Confirmed live: an
+        # asset crt.sh AND subfinder both found showed only "subfinder" in
+        # the source-reliability scorecard. also_found_by is the
+        # authoritative list; fall back to the single source for callers
+        # that bypass dedupe_assets() and call upsert() directly.
+        contributing_sources = asset.metadata.get("also_found_by") or [asset.source.value]
         if row is None:
             self.conn.execute(
                 "INSERT INTO assets (key, target, value, asset_type, first_seen, last_seen, sources, metadata) "
@@ -75,7 +86,7 @@ class AssetStore:
                     asset.asset_type.value,
                     now,
                     now,
-                    json.dumps([asset.source.value]),
+                    json.dumps(sorted(contributing_sources)),
                     json.dumps(asset.metadata),
                 ),
             )
@@ -83,7 +94,7 @@ class AssetStore:
             return True
         else:
             sources = set(json.loads(row[0]))
-            sources.add(asset.source.value)
+            sources.update(contributing_sources)
             metadata = json.loads(row[1])
             metadata.update(asset.metadata)
             self.conn.execute(

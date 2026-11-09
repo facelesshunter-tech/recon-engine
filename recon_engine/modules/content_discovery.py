@@ -55,6 +55,7 @@ def fuzz(
     threads: int = 40,
     match_codes: str = "200-299,301,302,307,401,403",
     extensions: list[str] | None = None,
+    auto_calibrate: bool = True,
     timeout: int = 1800,
 ) -> list[FuzzHit]:
     path = config.tool_path("ffuf")
@@ -85,6 +86,14 @@ def fuzz(
     ]
     if extensions:
         argv += ["-e", ",".join(extensions)]
+    if auto_calibrate:
+        # -ac: ffuf probes a few random non-existent paths first and
+        # auto-filters any response shape (status+size+words) that matches
+        # them from the real results. Without this, a host that returns
+        # the same status for every path (confirmed live: Akamai-fronted
+        # API gateways blanket-403ing every FUZZ path) gets reported as a
+        # near-total-wordlist "hit," which is noise, not a finding.
+        argv.append("-ac")
 
     result = run(argv, timeout=timeout)
     hits: list[FuzzHit] = []

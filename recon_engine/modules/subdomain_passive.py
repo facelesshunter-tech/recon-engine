@@ -37,7 +37,12 @@ def run_subfinder(config: Config, domain: str, *, all_sources: bool = True, time
     return dedupe_strings(result.stdout.splitlines())
 
 
-def run_amass(config: Config, domain: str, *, timeout: int = 600, passive: bool = True) -> list[str]:
+def run_amass(config: Config, domain: str, *, timeout: int = 1800, passive: bool = True) -> list[str]:
+    # amass is consistently the slowest passive source -- confirmed live
+    # against tesla.com, it timed out at the old 600s default with ZERO
+    # output for a target that size. 1800s matches the generous default
+    # every other long-running module in this project already uses
+    # (content_discovery, web_crawl's gau, vuln_verify, api_discovery).
     path = config.tool_path("amass")
     if not path:
         logger.warning("amass not found on PATH -- install from github.com/owasp-amass/amass")

@@ -36,7 +36,7 @@ class WAFResult:
     manufacturer: str = ""
 
 
-def detect(config: Config, urls: list[str], *, timeout: int = 600) -> dict[str, WAFResult]:
+def detect(config: Config, urls: list[str], *, timeout: int = 600, per_request_timeout: int = 10) -> dict[str, WAFResult]:
     path = config.tool_path("wafw00f")
     if not path:
         logger.warning("wafw00f not found on PATH -- install with: pip install wafw00f")
@@ -52,7 +52,12 @@ def detect(config: Config, urls: list[str], *, timeout: int = 600) -> dict[str, 
         in_path = Path(tmp.name)
     out_path = in_path.with_suffix(".out.json")
 
-    argv = [path, "-i", str(in_path), "-o", str(out_path), "-f", "json"]
+    # -T caps each individual request's connect/read timeout -- confirmed
+    # live against Tesla that without this, a single unreachable host in
+    # the batch lets wafw00f's own retry logic eat the ENTIRE outer
+    # `timeout` budget, silently returning zero results for every host in
+    # the batch, not just the unreachable one.
+    argv = [path, "-i", str(in_path), "-o", str(out_path), "-f", "json", "-T", str(per_request_timeout)]
     result = run(argv, timeout=timeout)
 
     out: dict[str, WAFResult] = {}

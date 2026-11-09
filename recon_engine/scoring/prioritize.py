@@ -15,8 +15,11 @@ matches one of these products gets a large, explicit score bump.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
+import time
+from pathlib import Path
 
 from recon_engine.models import LiveHost
 from recon_engine.utils.http import get_json
@@ -25,6 +28,7 @@ logger = logging.getLogger("recon_engine.scoring")
 
 EPSS_API = "https://api.first.org/data/v1/epss"
 CISA_KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+KEV_CACHE_PATH = Path.home() / ".cache" / "recon-engine" / "cisa_kev.json"
 
 # Exact CVE timeline from the deck's "Stuff to watch for (other)" slide.
 EDGE_DEVICE_CVE_WATCHLIST: dict[str, list[str]] = {
@@ -122,12 +126,20 @@ _kev_cache: set[str] = set()
 _intel_loaded = False
 
 
-def refresh_cve_intel(*, timeout: int = 30) -> None:
+def refresh_cve_intel(*, timeout: int = 30, kev_cache_max_age_hours: float = 24.0) -> None:
     """Fetches current EPSS scores for the watchlist's own CVEs and the
     full CISA KEV catalog, caching both at module level. Safe to call
     multiple times; safe to not call at all (scoring still works with
     plain CVE-watchlist matching if this is skipped or the network calls
-    fail -- matches every other module's graceful-degradation pattern)."""
+    fail -- matches every other module's graceful-degradation pattern).
+
+    The KEV catalog is also cached to disk (`KEV_CACHE_PATH`): a fresh
+    local copy (younger than `kev_cache_max_age_hours`) is used without
+    any network call at all, and a stale-but-present copy is used as a
+    fallback if the live fetch fails -- confirmed useful directly, since
+    www.cisa.gov is unreachable from this project's own dev sandbox but
+    the catalog itself changes slowly enough that a day-old cache is
+    still meaningfully better than no KEV data at all."""
     global _intel_loaded
     all_cves = sorted({cve for cves in EDGE_DEVICE_CVE_WATCHLIST.values() for cve in cves})
 
@@ -144,16 +156,45 @@ def refresh_cve_intel(*, timeout: int = 30) -> None:
     else:
         logger.warning("EPSS fetch failed -- scoring will proceed without EPSS enhancement")
 
-    kev_data = get_json(CISA_KEV_URL, timeout=timeout)
-    if kev_data:
-        for vuln in kev_data.get("vulnerabilities", []):
-            cve_id = vuln.get("cveID")
-            if cve_id:
-                _kev_cache.add(cve_id)
-    else:
-        logger.warning("CISA KEV fetch failed -- scoring will proceed without KEV enhancement")
+    kev_ids = _load_kev_catalog(timeout=timeout, max_age_hours=kev_cache_max_age_hours)
+    _kev_cache.update(kev_ids)
 
     _intel_loaded = True
+
+
+def _load_kev_catalog(*, timeout: int, max_age_hours: float) -> set[str]:
+    cached = _read_kev_cache()
+    if cached is not None:
+        age_hours = (time.time() - KEV_CACHE_PATH.stat().st_mtime) / 3600
+        if age_hours <= max_age_hours:
+            logger.info("using cached CISA KEV catalog (%.1fh old, %d entries)", age_hours, len(cached))
+            return cached
+
+    kev_data = get_json(CISA_KEV_URL, timeout=timeout)
+    if kev_data:
+        ids = {v["cveID"] for v in kev_data.get("vulnerabilities", []) if v.get("cveID")}
+        try:
+            KEV_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            KEV_CACHE_PATH.write_text(json.dumps(sorted(ids)))
+        except OSError as e:
+            logger.warning("could not write KEV cache to %s: %s", KEV_CACHE_PATH, e)
+        return ids
+
+    if cached is not None:
+        logger.warning("CISA KEV fetch failed -- falling back to stale local cache (%d entries)", len(cached))
+        return cached
+
+    logger.warning("CISA KEV fetch failed and no local cache exists -- scoring proceeds without KEV enhancement")
+    return set()
+
+
+def _read_kev_cache() -> set[str] | None:
+    if not KEV_CACHE_PATH.is_file():
+        return None
+    try:
+        return set(json.loads(KEV_CACHE_PATH.read_text()))
+    except (json.JSONDecodeError, OSError):
+        return None
 
 
 def _cve_intel_bonus(cves: list[str]) -> tuple[float, list[str]]:

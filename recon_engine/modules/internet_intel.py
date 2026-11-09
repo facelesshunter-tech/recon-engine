@@ -23,6 +23,9 @@ Three sources, each a different kind of intelligence:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
+
+import yaml
 
 from recon_engine.config import Config
 from recon_engine.utils.subprocess_runner import run
@@ -34,6 +37,48 @@ logger = logging.getLogger("recon_engine.internet_intel")
 CENSYS_SEARCH_URL = "https://search.censys.io/api/v2/hosts/search"
 URLSCAN_SEARCH_URL = "https://urlscan.io/api/v1/search/"
 URLSCAN_SUBMIT_URL = "https://urlscan.io/api/v1/scan/"
+
+# Uncover keeps its OWN provider-config file, entirely separate from
+# recon-engine's config.yaml -- confirmed live: a real Censys key sitting
+# in recon-engine's own config does nothing for Uncover's -e censys engine
+# unless it's also present here. Silent gap otherwise (0 results, no error
+# telling you why), so uncover_search() syncs into it automatically below.
+UNCOVER_PROVIDER_CONFIG = Path.home() / ".config" / "uncover" / "provider-config.yaml"
+
+
+def sync_uncover_provider_config(config: Config, *, path: Path | None = None) -> None:
+    """Propagates whatever Shodan/Censys credentials recon-engine has
+    configured into Uncover's own provider-config.yaml, preserving every
+    other provider entry already there untouched. Safe to call every time
+    -- it's a small local file write, not a network call, and a no-op for
+    any provider recon-engine has no key for."""
+    path = path or UNCOVER_PROVIDER_CONFIG
+    data: dict = {}
+    if path.is_file():
+        try:
+            data = yaml.safe_load(path.read_text()) or {}
+        except yaml.YAMLError:
+            logger.warning("uncover provider-config at %s is not valid YAML -- leaving it untouched", path)
+            return
+
+    changed = False
+    shodan_key = config.api_key("shodan")
+    if shodan_key and data.get("shodan") != [shodan_key]:
+        data["shodan"] = [shodan_key]
+        changed = True
+    censys_key = config.api_key("censys")
+    if censys_key and ":" in censys_key:
+        api_id, api_secret = censys_key.split(":", 1)
+        censys_entry = f"{api_id}:{api_secret}"
+        if data.get("censys") != [censys_entry]:
+            data["censys"] = [censys_entry]
+            changed = True
+
+    if not changed:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.dump(data, default_flow_style=False))
+    logger.info("synced recon-engine's API keys into uncover's provider-config at %s", path)
 
 
 def uncover_search(
@@ -53,6 +98,7 @@ def uncover_search(
     if not path:
         logger.warning("uncover not found on PATH -- install with: go install github.com/projectdiscovery/uncover/cmd/uncover@latest")
         return []
+    sync_uncover_provider_config(config)
     engines = engines or ["shodan", "censys"]
     argv = [path, "-silent", "-q", query, "-e", ",".join(engines), "-f", "ip:port", "-limit", str(limit)]
     result = run(argv, timeout=timeout)

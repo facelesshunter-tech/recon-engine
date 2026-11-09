@@ -92,6 +92,19 @@ MAX_CONTENT_DISCOVERY_HOSTS = 10
 MAX_PARAM_DISCOVERY_HOSTS = 10
 MAX_API_DISCOVERY_HOSTS = 10
 MAX_JS_ANALYSIS_FILES = 30
+MAX_WAF_DETECT_HOSTS = 50
+
+# Maps subdomain_passive.passive_enumerate()'s per-tool result keys to a
+# matching Source enum value, so each passively-discovered asset is
+# attributed to the specific tool that found it.
+PASSIVE_SOURCE_MAP: dict[str, Source] = {
+    "subfinder": Source.SUBFINDER,
+    "amass": Source.AMASS,
+    "bbot": Source.BBOT,
+    "assetfinder": Source.ASSETFINDER,
+    "crtsh": Source.CRTSH,
+    "c99": Source.C99,
+}
 
 
 @dataclass
@@ -176,7 +189,14 @@ class Pipeline:
         )
         for source_name, values in passive_results.items():
             stages_run.append(f"subdomain_passive:{source_name}")
-            source = Source.SUBDOMAIN_PASSIVE
+            # Per-tool Source value (not the generic SUBDOMAIN_PASSIVE) so
+            # the source-reliability scorecard can actually tell subfinder
+            # apart from amass/bbot/assetfinder/crtsh -- passive_results is
+            # already keyed by individual tool, it was just being discarded
+            # here before (confirmed via a live Tesla run: the scorecard
+            # only ever showed one undifferentiated "subdomain_passive"
+            # bucket, never the individual tools).
+            source = PASSIVE_SOURCE_MAP.get(source_name, Source.SUBDOMAIN_PASSIVE)
             for v in values:
                 subdomains.append(Asset(value=v, asset_type=AssetType.SUBDOMAIN, source=source, target=target))
 
@@ -218,7 +238,6 @@ class Pipeline:
         # --- dedupe known subdomains before spending bruteforce/permutation
         # budget on them again --------------------------------------------
         subdomains = dedupe_assets(subdomains)
-        known_values = [a.value for a in subdomains] or [target]
 
         # --- active bruteforce ----------------------------------------------
         if self.options.use_bruteforce and self.options.wordlist and self.options.resolvers:
@@ -231,8 +250,14 @@ class Pipeline:
                 )
 
         # --- permutation/alteration -----------------------------------------
+        # known_values is captured HERE, after bruteforce -- not before it.
+        # Capturing it earlier (the original bug, confirmed via a live Tesla
+        # run) meant anything bruteforce discovered never got fed into
+        # permutation's mutation engine at all, silently wasting the whole
+        # stage's potential on bruteforce-found names.
         if self.options.use_permutation and self.options.resolvers:
             stages_run.append("permutation")
+            known_values = [a.value for a in dedupe_assets(subdomains)] or [target]
             for v in permutation.permute_and_resolve(self.config, known_values, self.options.resolvers):
                 subdomains.append(
                     Asset(value=v, asset_type=AssetType.SUBDOMAIN, source=Source.PERMUTATION, target=target)
@@ -284,10 +309,21 @@ class Pipeline:
             tls_info = tls_probe.probe(self.config, bare_hosts)
 
         # --- WAF fingerprinting (wafw00f) -------------------------------------
+        # Capped like the other deep-dive stages -- confirmed via a live
+        # Tesla run that running the FULL live-host list in one uncapped
+        # batch let a single unreachable host burn the whole stage's
+        # timeout via wafw00f's own connection retries, returning zero
+        # results for all 402 hosts, not just the bad one.
         waf_info: dict[str, waf_detect.WAFResult] = {}
         if self.options.use_waf_detect and live_urls:
             stages_run.append("waf_detect")
-            waf_info = waf_detect.detect(self.config, live_urls)
+            targets = live_urls[:MAX_WAF_DETECT_HOSTS]
+            if len(live_urls) > MAX_WAF_DETECT_HOSTS:
+                logger.info(
+                    "waf_detect: capping wafw00f to the first %d of %d live hosts",
+                    MAX_WAF_DETECT_HOSTS, len(live_urls),
+                )
+            waf_info = waf_detect.detect(self.config, targets)
 
         # --- favicon fingerprinting ------------------------------------------
         if self.options.use_favicon and self.options.favicon_db:

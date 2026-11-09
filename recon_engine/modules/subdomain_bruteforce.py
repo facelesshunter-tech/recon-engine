@@ -9,6 +9,7 @@ deck's own stated preference and exact invocation shape:
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from recon_engine.config import Config
@@ -16,6 +17,32 @@ from recon_engine.utils.subprocess_runner import run
 from recon_engine.utils.dedupe import dedupe_strings
 
 logger = logging.getLogger("recon_engine.subdomain_bruteforce")
+
+# puredns prints its own fatal errors (most notably "massdns not found" when
+# that dependency is missing) to STDOUT, not stderr -- confirmed directly by
+# running it with massdns absent. Without this check, that error text gets
+# silently treated as "discovered subdomains" (confirmed live: it corrupted
+# a real Tesla scan's asset database with puredns's own error message,
+# counted as 3 real subdomain hits). Every genuine puredns output line is a
+# resolved hostname and will always look like one; anything that doesn't is
+# rejected and logged loudly instead of silently accepted.
+_HOSTNAME_RE = re.compile(r"^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$", re.IGNORECASE)
+
+
+def _valid_hostnames_only(lines: list[str]) -> list[str]:
+    valid, rejected = [], []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        (valid if _HOSTNAME_RE.match(line) else rejected).append(line)
+    if rejected:
+        logger.warning(
+            "puredns produced %d line(s) that don't look like real hostnames -- discarded, not treated as "
+            "subdomains (likely puredns's own error output, e.g. a missing massdns dependency): %s",
+            len(rejected), rejected[:3],
+        )
+    return valid
 
 # trickest/resolvers is the fresh-resolver-list source TBHM names explicitly,
 # specifically recommending resolvers-trusted.txt for re-validating results
@@ -50,7 +77,7 @@ def bruteforce(
     result = run(argv, timeout=timeout)
     if not result.ok and not result.stdout:
         logger.warning("puredns exited %s: %s", result.returncode, result.stderr.strip()[:300])
-    return dedupe_strings(result.stdout.splitlines())
+    return dedupe_strings(_valid_hostnames_only(result.stdout.splitlines()))
 
 
 def resolve(
@@ -69,4 +96,6 @@ def resolve(
         return []
     argv = [path, "resolve", "--resolvers", str(resolvers), "-q"]
     result = run(argv, stdin_text="\n".join(candidates), timeout=timeout)
-    return dedupe_strings(result.stdout.splitlines())
+    if not result.ok and not result.stdout:
+        logger.warning("puredns resolve exited %s: %s", result.returncode, result.stderr.strip()[:300])
+    return dedupe_strings(_valid_hostnames_only(result.stdout.splitlines()))

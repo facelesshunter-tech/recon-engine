@@ -52,8 +52,31 @@ def arjun_discover(config: Config, url: str, *, method: str = "GET", timeout: in
             logger.warning("arjun produced unparseable JSON output")
         out_path.unlink(missing_ok=True)
     elif not result.ok:
-        logger.warning("arjun exited %s: %s", result.returncode, result.stderr.strip()[:300])
+        logger.warning("arjun failed against %s: %s", url, _describe_arjun_failure(result.stderr))
     return dedupe_strings(params)
+
+
+# A real, reproducible bug in arjun itself (confirmed by running it
+# directly, outside recon-engine): it crashes with this exact
+# AttributeError whenever the target's baseline request doesn't return
+# HTTP 200 -- which is exactly what happens against any WAF/gateway-fronted
+# host that blanket-denies unauthenticated requests (confirmed live against
+# several Akamai-fronted tesla.com hosts, all returning 403). Not
+# fixable from recon-engine's side; this only makes the resulting log
+# line readable instead of a truncated, confusing partial stack trace.
+_ARJUN_KNOWN_CRASH_SIGNATURE = "'dict' object has no attribute 'status_code'"
+
+
+def _describe_arjun_failure(stderr: str) -> str:
+    if _ARJUN_KNOWN_CRASH_SIGNATURE in stderr:
+        return (
+            "arjun crashed internally (known upstream bug: it errors on any non-200 "
+            "baseline response, e.g. a WAF/gateway returning 403 -- see github.com/s0md3v/Arjun). "
+            "Not a recon-engine issue; x8 still ran independently against this URL."
+        )
+    if "Traceback (most recent call last)" in stderr:
+        return f"arjun crashed internally (unrecognized traceback): {stderr.strip().splitlines()[-1][:200]}"
+    return stderr.strip()[:300]
 
 
 def x8_discover(config: Config, url: str, wordlist: Path | None = None, *, timeout: int = 600) -> list[str]:
